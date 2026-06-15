@@ -512,8 +512,26 @@
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Erreur lors de l\'exportation');
+                    let errMsg = 'Erreur lors de l\'exportation';
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.detail) {
+                            if (typeof errorData.detail === 'string') {
+                                errMsg = errorData.detail;
+                            } else if (Array.isArray(errorData.detail)) {
+                                // Formate les erreurs de validation de Pydantic (ex: "db : Field required")
+                                errMsg = errorData.detail.map(err => {
+                                    const fieldPath = err.loc ? err.loc.filter(l => l !== 'body').join('.') : '';
+                                    return fieldPath ? `${fieldPath} : ${err.msg}` : err.msg;
+                                }).join(' | ');
+                            } else {
+                                errMsg = JSON.stringify(errorData.detail);
+                            }
+                        }
+                    } catch (e) {
+                        errMsg = `Erreur HTTP ${response.status} : ${response.statusText}`;
+                    }
+                    throw new Error(errMsg);
                 }
 
                 // Retrieve CSV as a blob
