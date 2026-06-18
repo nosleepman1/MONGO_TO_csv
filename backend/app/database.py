@@ -27,10 +27,10 @@ def build_mongo_uri(req: ExportRequest) -> str:
     return f"mongodb+srv://{enc_user}:{enc_pwd}@{cluster_host}/"
 
 
-def fetch_mongodb_documents(mongo_uri: str, db_name: str, collection_name: str) -> List[Dict[str, Any]]:
+def fetch_mongodb_documents(mongo_uri: str, db_name: str, collection_name: str, batch_size: int = 2000) -> List[Dict[str, Any]]:
     """
     Se connecte à MongoDB, valide la connexion via ping et récupère tous les documents
-    de la collection ciblée. Ferme le client après exécution.
+    de la collection ciblée par lots. Ferme le client après exécution.
     """
     client = None
     try:
@@ -43,8 +43,9 @@ def fetch_mongodb_documents(mongo_uri: str, db_name: str, collection_name: str) 
         db = client[db_name]
         collection = db[collection_name]
         
-        # Récupérer tous les documents
-        docs = list(collection.find())
+        # Récupérer les documents par lots pour optimiser la transmission réseau et éviter les timeouts
+        cursor = collection.find().batch_size(batch_size)
+        docs = list(cursor)
         return docs
         
     except (ConnectionFailure, OperationFailure) as e:
