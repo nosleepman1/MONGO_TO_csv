@@ -1,17 +1,23 @@
 import os
 
-# Dossier racine du projet
+# Dossier racine du projet backend
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Chemin d'accès absolu au fichier index.html de l'interface utilisateur
 INDEX_HTML_PATH = os.path.join(BASE_DIR, "index.html")
+if not os.path.exists(INDEX_HTML_PATH):
+    INDEX_HTML_PATH = os.path.join(os.path.dirname(BASE_DIR), "index.html")
 
 def load_dotenv():
     """
     Chargeur léger de variables d'environnement depuis un fichier .env (sans dépendance tierce).
     Utile pour la portabilité et le fonctionnement sans installation additionnelle.
     """
+    # Recherche dans backend/.env, et sinon à la racine du workspace
     dotenv_path = os.path.join(BASE_DIR, ".env")
+    if not os.path.exists(dotenv_path):
+        dotenv_path = os.path.join(os.path.dirname(BASE_DIR), ".env")
+
     if os.path.exists(dotenv_path):
         with open(dotenv_path, "r", encoding="utf-8") as f:
             for line in f:

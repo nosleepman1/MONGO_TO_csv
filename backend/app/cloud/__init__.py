@@ -1,1 +1,1 @@
-# Package app/cloud
+# Package pour les intégrations de stockage Cloud.

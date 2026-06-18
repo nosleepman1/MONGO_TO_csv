@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field, model_validator
 
 class ExportRequest(BaseModel):
@@ -27,3 +27,12 @@ class ExportRequest(BaseModel):
                     "Vous devez fournir soit une 'URI de connexion', soit le triplet ('Cluster', 'Utilisateur', 'Mot de passe')."
                 )
         return self
+
+class BackupRequest(ExportRequest):
+    provider: str = Field("mock", description="Fournisseur Cloud: s3, dropbox, gdrive, mock")
+    dest_path: str = Field(..., min_length=1, description="Chemin de destination sur le Cloud")
+    provider_config: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Configuration spécifique au fournisseur Cloud")
+
+class ScheduleRequest(BackupRequest):
+    job_id: str = Field(..., min_length=1, description="Identifiant unique pour la tâche planifiée")
+    cron_expression: str = Field(..., min_length=1, description="Expression cron standard, ex: '0 2 * * *'")
