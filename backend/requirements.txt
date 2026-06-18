@@ -3,3 +3,5 @@ uvicorn
 pymongo
 dnspython
 pandas
+apscheduler
+sqlalchemy
