@@ -44,7 +44,8 @@ class TestScheduler(unittest.TestCase):
         mock_sched_instance.running = True
         self.assertTrue(manager.is_running())
         
-        # Mock d'ajout de tâche
+        # Mock d'ajout de tâche (le job n'existe pas encore)
+        mock_sched_instance.get_job.return_value = None
         manager.add_backup_job(
             job_id="job1",
             cron_expression="*/5 * * * *",
@@ -70,7 +71,7 @@ class TestScheduler(unittest.TestCase):
         self.assertEqual(jobs[0]["id"], "job1")
         self.assertEqual(jobs[0]["kwargs"]["mongo_uri"], "[SÉCURISÉ]")
         
-        # Mock de suppression de tâche
+        # Mock de suppression de tâche (le job existe)
         mock_sched_instance.get_job.return_value = mock_job
         removed = manager.remove_backup_job("job1")
         self.assertTrue(removed)
