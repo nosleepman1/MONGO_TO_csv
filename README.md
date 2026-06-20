@@ -128,4 +128,5 @@ import { ExportRequest, JobsListResponse } from "../frontend/types";
 ```
 
 Pour la documentation complète des routes API et des payloads JSON, veuillez vous référer à :
-**`backend/workflow_and_api.md`**
+[WORKFLOW and API DOC](backend/workflow_and_api.md)
+
