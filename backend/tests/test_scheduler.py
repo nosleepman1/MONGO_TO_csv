@@ -1,23 +1,196 @@
+"""Tests for scheduler manager and tasks"""
+
 import unittest
 from unittest.mock import patch, MagicMock
-from app.scheduler.tasks import run_backup_job
 from app.scheduler.manager import SchedulerManager
+from app.scheduler.tasks import run_backup_job
+from app.core.exceptions import SchedulerError
 
-class TestScheduler(unittest.TestCase):
-    @patch("app.scheduler.tasks.fetch_mongodb_documents")
-    @patch("app.scheduler.tasks.get_uploader")
-    def test_run_backup_job(self, mock_get_uploader, mock_fetch):
-        # Configuration des mocks
-        mock_fetch.return_value = [{"name": "test_doc", "value": 42}]
-        mock_uploader = MagicMock()
-        mock_get_uploader.return_value = mock_uploader
-        mock_uploader.upload_file.return_value = True
 
-        success = run_backup_job(
+class TestSchedulerManager(unittest.TestCase):
+    """Test SchedulerManager"""
+    
+    def setUp(self):
+        self.manager = SchedulerManager()
+    
+    def tearDown(self):
+        if self.manager.is_running():
+            self.manager.shutdown()
+    
+    def test_start_scheduler(self):
+        """Test starting the scheduler"""
+        self.manager.start()
+        self.assertTrue(self.manager.is_running())
+    
+    def test_shutdown_scheduler(self):
+        """Test shutting down the scheduler"""
+        self.manager.start()
+        self.assertTrue(self.manager.is_running())
+        
+        self.manager.shutdown()
+        self.assertFalse(self.manager.is_running())
+    
+    def test_start_already_running(self):
+        """Test starting scheduler when already running"""
+        self.manager.start()
+        # Should not raise, just return
+        self.manager.start()
+        self.assertTrue(self.manager.is_running())
+    
+    def test_is_running_when_not_started(self):
+        """Test is_running returns False when not started"""
+        self.assertFalse(self.manager.is_running())
+    
+    def test_add_job_scheduler_not_running(self):
+        """Test adding job when scheduler not running"""
+        with self.assertRaises(SchedulerError):
+            self.manager.add_backup_job(
+                job_id="test_job",
+                cron_expression="0 2 * * *",
+                db_name="test_db",
+                collection_name="test_coll",
+                provider="mock",
+                dest_path="test.csv"
+            )
+    
+    def test_add_job_invalid_cron(self):
+        """Test adding job with invalid cron expression"""
+        self.manager.start()
+        
+        with self.assertRaises(SchedulerError):
+            self.manager.add_backup_job(
+                job_id="test_job",
+                cron_expression="invalid cron",
+                db_name="test_db",
+                collection_name="test_coll",
+                provider="mock",
+                dest_path="test.csv"
+            )
+    
+    def test_add_job_valid(self):
+        """Test adding valid job"""
+        self.manager.start()
+        
+        self.manager.add_backup_job(
+            job_id="test_job",
+            cron_expression="0 2 * * *",
             db_name="test_db",
-            collection_name="test_col",
+            collection_name="test_coll",
             provider="mock",
-            dest_path="backups/test.csv",
+            dest_path="test.csv",
+            mongo_uri="mongodb://localhost/"
+        )
+        
+        # Verify job was added
+        job = self.manager.scheduler.get_job("test_job")
+        self.assertIsNotNone(job)
+        self.assertEqual(job.id, "test_job")
+    
+    def test_remove_job_existing(self):
+        """Test removing existing job"""
+        self.manager.start()
+        
+        # Add job first
+        self.manager.add_backup_job(
+            job_id="test_job",
+            cron_expression="0 2 * * *",
+            db_name="test_db",
+            collection_name="test_coll",
+            provider="mock",
+            dest_path="test.csv",
+            mongo_uri="mongodb://localhost/"
+        )
+        
+        # Remove it
+        result = self.manager.remove_backup_job("test_job")
+        self.assertTrue(result)
+        self.assertIsNone(self.manager.scheduler.get_job("test_job"))
+    
+    def test_remove_job_non_existing(self):
+        """Test removing non-existing job"""
+        self.manager.start()
+        
+        result = self.manager.remove_backup_job("non_existent")
+        self.assertFalse(result)
+    
+    def test_list_jobs_empty(self):
+        """Test listing jobs when empty"""
+        self.manager.start()
+        
+        jobs = self.manager.list_jobs()
+        self.assertEqual(jobs, [])
+    
+    def test_list_jobs_with_jobs(self):
+        """Test listing jobs with scheduled jobs"""
+        self.manager.start()
+        
+        self.manager.add_backup_job(
+            job_id="job1",
+            cron_expression="0 2 * * *",
+            db_name="db1",
+            collection_name="coll1",
+            provider="mock",
+            dest_path="test1.csv",
+            mongo_uri="mongodb://localhost/"
+        )
+        
+        self.manager.add_backup_job(
+            job_id="job2",
+            cron_expression="0 3 * * *",
+            db_name="db2",
+            collection_name="coll2",
+            provider="mock",
+            dest_path="test2.csv"
+        )
+        
+        jobs = self.manager.list_jobs()
+        self.assertEqual(len(jobs), 2)
+
+
+class TestRunBackupJob(unittest.TestCase):
+    """Test run_backup_job function"""
+    
+    @patch('app.scheduler.tasks.BackupService')
+    def test_run_backup_job_success_with_uri(self, mock_backup_service_class):
+        """Test successful backup job with URI"""
+        mock_service = MagicMock()
+        mock_backup_service_class.return_value = mock_service
+        mock_service.backup_to_cloud.return_value = {
+            "status": "success",
+            "message": "Backup successful"
+        }
+        
+        result = run_backup_job(
+            db_name="test_db",
+            collection_name="test_coll",
+            provider="mock",
+            dest_path="test.csv",
+            mongo_uri="mongodb://localhost/"
+        )
+        
+        self.assertTrue(result)
+        mock_service.backup_to_cloud.assert_called_once()
+    
+    @patch('app.scheduler.tasks.BackupService')
+    def test_run_backup_job_failure(self, mock_backup_service_class):
+        """Test backup job failure"""
+        mock_service = MagicMock()
+        mock_backup_service_class.return_value = mock_service
+        mock_service.backup_to_cloud.side_effect = Exception("Connection error")
+        
+        result = run_backup_job(
+            db_name="test_db",
+            collection_name="test_coll",
+            provider="mock",
+            dest_path="test.csv",
+            mongo_uri="mongodb://localhost/"
+        )
+        
+        self.assertFalse(result)
+
+
+if __name__ == "__main__":
+    unittest.main()
             mongo_uri="mongodb://localhost:27017"
         )
 

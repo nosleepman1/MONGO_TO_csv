@@ -1,9 +1,12 @@
-import logging
-from app.database import fetch_mongodb_documents, build_mongo_uri
-from app.processor import clean_data, generate_csv_bytes
-from app.cloud.factory import get_uploader
+"""Scheduler tasks"""
 
-logger = logging.getLogger("app.scheduler.tasks")
+from app.core.logger import get_logger
+from app.domain import BackupRequest
+from app.services.backup_service import BackupService
+from app.services.connection_service import ConnectionService
+
+logger = get_logger(__name__)
+
 
 def run_backup_job(
     db_name: str,
@@ -13,59 +16,54 @@ def run_backup_job(
     mongo_uri: str = None,
     connection_details: dict = None,
     provider_config: dict = None
-):
+) -> bool:
     """
-    Tâche planifiée pour exécuter un export et un upload Cloud complet.
+    Scheduled task for running backups.
     
-    :param db_name: Nom de la base de données.
-    :param collection_name: Nom de la collection.
-    :param provider: Fournisseur Cloud ('s3', 'dropbox', 'gdrive', 'mock').
-    :param dest_path: Chemin de destination du fichier exporté.
-    :param mongo_uri: URI complète de connexion (alternative aux détails séparés).
-    :param connection_details: Dictionnaire avec cluster, username, password.
-    :param provider_config: Paramètres du fournisseur Cloud (tokens, buckets...).
+    Args:
+        db_name: Database name
+        collection_name: Collection name
+        provider: Cloud provider
+        dest_path: Destination path
+        mongo_uri: MongoDB connection URI
+        connection_details: Alternative connection details
+        provider_config: Cloud provider configuration
+        
+    Returns:
+        True if successful, False otherwise
     """
-    logger.info(f"Début de la tâche de sauvegarde: {db_name}.{collection_name} -> {provider} ({dest_path})")
+    logger.info(f"Backup job started: {db_name}.{collection_name} -> {provider}")
     
     try:
-        # Résolution de l'URI de connexion MongoDB
-        uri = mongo_uri
-        if not uri and connection_details:
-            # Reconstruire les détails avec ExportRequest ou directement la méthode build_mongo_uri
-            from app.models import ExportRequest
-            req = ExportRequest(
+        # Build request
+        if mongo_uri:
+            req = BackupRequest(
+                uri=mongo_uri,
+                db=db_name,
+                collection=collection_name,
+                provider=provider,
+                dest_path=dest_path,
+                provider_config=provider_config
+            )
+        else:
+            req = BackupRequest(
                 cluster=connection_details.get("cluster"),
                 username=connection_details.get("username"),
                 password=connection_details.get("password"),
                 db=db_name,
-                collection=collection_name
+                collection=collection_name,
+                provider=provider,
+                dest_path=dest_path,
+                provider_config=provider_config
             )
-            uri = build_mongo_uri(req)
-            
-        if not uri:
-            raise ValueError("Aucune URI ou détail de connexion MongoDB fourni pour la tâche.")
-
-        # 1. Extraction MongoDB
-        docs = fetch_mongodb_documents(uri, db_name, collection_name)
-        if not docs:
-            logger.warning(f"Aucun document extrait de la collection '{collection_name}'. Tâche annulée.")
-            return False
-
-        # 2. Conversion CSV
-        df = clean_data(docs)
-        csv_bytes = generate_csv_bytes(df)
-
-        # 3. Uploader Cloud
-        uploader = get_uploader(provider, provider_config)
-        success = uploader.upload_file(csv_bytes, dest_path)
         
-        if success:
-            logger.info(f"Tâche de sauvegarde réussie: {db_name}.{collection_name} téléversée sur {provider}.")
-            return True
-        else:
-            logger.error(f"Échec de l'upload cloud pour la tâche de sauvegarde de {db_name}.{collection_name}.")
-            return False
-            
+        # Execute backup
+        backup_service = BackupService()
+        result = backup_service.backup_to_cloud(req)
+        
+        logger.info(f"Backup job completed successfully: {result}")
+        return True
+        
     except Exception as e:
-        logger.error(f"Erreur fatale lors de la tâche de sauvegarde de {db_name}.{collection_name}: {str(e)}", exc_info=True)
-        raise e
+        logger.error(f"Backup job failed: {str(e)}", exc_info=True)
+        return False

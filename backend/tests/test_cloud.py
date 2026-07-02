@@ -1,32 +1,163 @@
+"""Tests for cloud uploaders"""
+
 import unittest
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, mock_open
 from app.cloud.factory import get_uploader
-from app.cloud.base import CloudUploader
 from app.cloud.s3 import S3Uploader
 from app.cloud.dropbox import DropboxUploader
 from app.cloud.gdrive import GoogleDriveUploader
 
-class TestCloudUploader(unittest.TestCase):
-    def test_factory_returns_correct_uploader(self):
-        # Test mock provider
+
+class TestCloudFactory(unittest.TestCase):
+    """Test cloud uploader factory"""
+    
+    def test_factory_mock_uploader(self):
+        """Test factory returns mock uploader"""
         uploader = get_uploader("mock")
         self.assertEqual(uploader.__class__.__name__, "MockUploader")
         
-        # Test mock write
-        success = uploader.upload_file(b"test", "test.csv")
+        # Test upload
+        success = uploader.upload_file(b"test data", "test.csv")
         self.assertTrue(success)
-
-        # Test factory error for unknown provider
+    
+    def test_factory_unknown_provider(self):
+        """Test factory raises error for unknown provider"""
         with self.assertRaises(ValueError):
             get_uploader("unknown_provider")
+    
+    def test_factory_case_insensitive(self):
+        """Test factory is case insensitive"""
+        uploader1 = get_uploader("mock")
+        uploader2 = get_uploader("MOCK")
+        uploader3 = get_uploader("MoMo")
+        
+        self.assertEqual(uploader1.__class__.__name__, "MockUploader")
+        self.assertEqual(uploader2.__class__.__name__, "MockUploader")
+        self.assertEqual(uploader3.__class__.__name__, "MockUploader")
+    
+    def test_factory_gdrive_aliases(self):
+        """Test Google Drive aliases"""
+        # Should accept gdrive, google, google_drive
+        for provider in ["gdrive", "google", "google_drive"]:
+            uploader = get_uploader(provider, {
+                "credentials_file": "dummy.json",
+                "folder_id": "dummy_id"
+            })
+            self.assertEqual(uploader.__class__.__name__, "GoogleDriveUploader")
 
-    def test_s3_uploader(self):
-        mock_boto3 = MagicMock()
+
+class TestS3Uploader(unittest.TestCase):
+    """Test S3 uploader"""
+    
+    @patch('app.cloud.s3.boto3')
+    def test_s3_upload_success(self, mock_boto3):
+        """Test successful S3 upload"""
         mock_client = MagicMock()
         mock_boto3.client.return_value = mock_client
         
-        with patch.dict(sys.modules, {"boto3": mock_boto3}):
+        uploader = S3Uploader(
+            aws_access_key_id="key",
+            aws_secret_access_key="secret",
+            region_name="us-east-1",
+            bucket_name="mybucket"
+        )
+        
+        result = uploader.upload_file(b"test data", "path/file.csv")
+        self.assertTrue(result)
+        mock_client.upload_fileobj.assert_called_once()
+    
+    def test_s3_no_bucket_configured(self):
+        """Test S3 without bucket configuration"""
+        uploader = S3Uploader()
+        
+        with self.assertRaises(ValueError):
+            uploader.upload_file(b"test data", "file.csv")
+    
+    @patch('app.cloud.s3.boto3', side_effect=ImportError)
+    def test_s3_boto3_not_installed(self, mock_boto3):
+        """Test S3 when boto3 not installed"""
+        uploader = S3Uploader(bucket_name="mybucket")
+        
+        with self.assertRaises(ImportError):
+            uploader.upload_file(b"test data", "file.csv")
+
+
+class TestDropboxUploader(unittest.TestCase):
+    """Test Dropbox uploader"""
+    
+    @patch('app.cloud.dropbox.dropbox')
+    def test_dropbox_upload_success(self, mock_dropbox_module):
+        """Test successful Dropbox upload"""
+        mock_dbx = MagicMock()
+        mock_dropbox_module.Dropbox.return_value = mock_dbx
+        
+        uploader = DropboxUploader(access_token="test_token")
+        result = uploader.upload_file(b"test data", "path/file.csv")
+        
+        self.assertTrue(result)
+        mock_dbx.files_upload.assert_called_once()
+    
+    def test_dropbox_no_token_configured(self):
+        """Test Dropbox without token"""
+        uploader = DropboxUploader()
+        
+        with self.assertRaises(ValueError):
+            uploader.upload_file(b"test data", "file.csv")
+    
+    @patch('app.cloud.dropbox.dropbox.Dropbox')
+    def test_dropbox_path_normalization(self, mock_dropbox_class):
+        """Test Dropbox path normalization"""
+        mock_dbx = MagicMock()
+        mock_dropbox_class.return_value = mock_dbx
+        
+        uploader = DropboxUploader(access_token="test_token")
+        uploader.upload_file(b"test data", "path/file.csv")
+        
+        # Path should be normalized with leading slash
+        call_args = mock_dbx.files_upload.call_args
+        self.assertTrue(call_args[0][1].startswith("/"))
+
+
+class TestGoogleDriveUploader(unittest.TestCase):
+    """Test Google Drive uploader"""
+    
+    def test_gdrive_no_credentials(self):
+        """Test Google Drive without credentials file"""
+        uploader = GoogleDriveUploader(credentials_file=None)
+        
+        with self.assertRaises(ValueError):
+            uploader.upload_file(b"test data", "file.csv")
+    
+    def test_gdrive_credentials_not_found(self):
+        """Test Google Drive with missing credentials file"""
+        uploader = GoogleDriveUploader(credentials_file="/nonexistent/path.json")
+        
+        with self.assertRaises(FileNotFoundError):
+            uploader.upload_file(b"test data", "file.csv")
+    
+    @patch('app.cloud.gdrive.service_account')
+    @patch('app.cloud.gdrive.build')
+    @patch('builtins.open', new_callable=mock_open, read_data='{"type": "service_account"}')
+    def test_gdrive_upload_success(self, mock_file, mock_build, mock_service_account):
+        """Test successful Google Drive upload"""
+        mock_credentials = MagicMock()
+        mock_service_account.Credentials.from_service_account_file.return_value = mock_credentials
+        
+        mock_service = MagicMock()
+        mock_build.return_value = mock_service
+        
+        uploader = GoogleDriveUploader(
+            credentials_file="test_creds.json",
+            folder_id="folder123"
+        )
+        
+        result = uploader.upload_file(b"test data", "file.csv")
+        self.assertTrue(result)
+
+
+if __name__ == "__main__":
+    unittest.main()
             uploader = get_uploader("s3", {
                 "aws_access_key_id": "test_key",
                 "aws_secret_access_key": "test_secret",

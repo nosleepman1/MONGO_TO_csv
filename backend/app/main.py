@@ -1,23 +1,27 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from app.routes import router
+from app.routes.api import router
 from app.scheduler.manager import scheduler_manager
+from app.core.logger import get_logger
+
+logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Démarrage automatique d'APScheduler au lancement du serveur
+    """Startup and shutdown event handler"""
+    logger.info("Application starting...")
     scheduler_manager.start()
     yield
-    # Arrêt propre d'APScheduler à l'arrêt du serveur
+    logger.info("Application shutting down...")
     scheduler_manager.shutdown()
 
-# Initialisation de l'application FastAPI
+# Initialization
 app = FastAPI(
     title="MongoDB to CSV Exporter",
-    description="Exportez facilement vos collections MongoDB en fichiers CSV propres et planifiez des sauvegardes cloud.",
+    description="Export MongoDB collections to clean CSV files and schedule cloud backups.",
     version="1.1.0",
     lifespan=lifespan
 )
 
-# Inclusion des routes
+# Include routes
 app.include_router(router)
