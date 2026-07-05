@@ -2,12 +2,11 @@ import Navbar from "./components/layouts/navbar"
 import AppRoutes from "./routes/appRoutes"
 import { Toaster } from "@/components/ui/sonner"
 
-
 const App = () => {
   return (
-    <main className="min-h-screen bg-muted/30">
+    <main className="min-h-screen bg-slate-50">
       <Navbar />
-      <div className="flex justify-center items-center min-h-screen   mx-auto px-4 sm:px-1 lg:px-3">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <AppRoutes />
       </div>
       <Toaster position="bottom-right" richColors />
