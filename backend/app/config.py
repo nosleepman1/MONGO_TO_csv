@@ -4,9 +4,11 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Chemin d'accès absolu au fichier index.html de l'interface utilisateur
-INDEX_HTML_PATH = os.path.join(BASE_DIR, "index.html")
+INDEX_HTML_PATH = os.path.join(os.path.dirname(BASE_DIR), "frontend", "dist", "index.html")
 if not os.path.exists(INDEX_HTML_PATH):
-    INDEX_HTML_PATH = os.path.join(os.path.dirname(BASE_DIR), "index.html")
+    INDEX_HTML_PATH = os.path.join(BASE_DIR, "index.html")
+    if not os.path.exists(INDEX_HTML_PATH):
+        INDEX_HTML_PATH = os.path.join(os.path.dirname(BASE_DIR), "index.html")
 
 def load_dotenv():
     """

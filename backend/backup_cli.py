@@ -6,9 +6,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.config import load_dotenv
-from app.database import build_mongo_uri, fetch_mongodb_documents
-from app.models import ExportRequest
-from app.processor import clean_data, generate_csv_bytes
+from app.services.connection_service import ConnectionService
+from app.repositories import MongoDBRepository
+from app.processor import CSVProcessor
+from app.domain import ExportRequest
 from app.cloud.factory import get_uploader
 
 def main():
@@ -67,7 +68,7 @@ def main():
             db=args.db,
             collection=args.collection
         )
-        resolved_uri = build_mongo_uri(req)
+        resolved_uri = ConnectionService.build_mongo_uri(req)
     except Exception as e:
         print(f"[ERREUR] Paramètres MongoDB invalides : {str(e)}")
         sys.exit(1)
@@ -75,7 +76,7 @@ def main():
     # 3. Extraction des documents
     print(f"Connexion à MongoDB...")
     try:
-        docs = fetch_mongodb_documents(resolved_uri, args.db, args.collection)
+        docs = MongoDBRepository.fetch_documents(resolved_uri, args.db, args.collection)
     except Exception as e:
         print(f"[ERREUR] Connexion à MongoDB ou récupération des données échouée : {str(e)}")
         sys.exit(1)
@@ -87,8 +88,8 @@ def main():
     # 4. Conversion CSV
     print(f"Normalisation et conversion de {len(docs)} documents en CSV...")
     try:
-        df = clean_data(docs)
-        csv_bytes = generate_csv_bytes(df)
+        df = CSVProcessor.clean_data(docs)
+        csv_bytes = CSVProcessor.generate_csv_bytes(df)
     except Exception as e:
         print(f"[ERREUR] Échec de la transformation des données : {str(e)}")
         sys.exit(1)

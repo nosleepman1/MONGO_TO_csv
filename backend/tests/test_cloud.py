@@ -1,7 +1,26 @@
 """Tests for cloud uploaders"""
 
+import sys
+from unittest.mock import MagicMock
+
+# Mock optional cloud SDK packages to allow tests to run without them installed
+mock_boto3 = MagicMock()
+mock_dropbox = MagicMock()
+mock_google = MagicMock()
+mock_google_oauth = MagicMock()
+mock_googleapi = MagicMock()
+
+sys.modules['boto3'] = mock_boto3
+sys.modules['dropbox'] = mock_dropbox
+sys.modules['google'] = mock_google
+sys.modules['google.oauth2'] = mock_google_oauth
+sys.modules['google.oauth2.service_account'] = mock_google_oauth
+sys.modules['googleapiclient'] = mock_googleapi
+sys.modules['googleapiclient.discovery'] = mock_googleapi
+sys.modules['googleapiclient.http'] = mock_googleapi
+
 import unittest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, mock_open
 from app.cloud.factory import get_uploader
 from app.cloud.s3 import S3Uploader
 from app.cloud.dropbox import DropboxUploader
@@ -27,8 +46,7 @@ class TestCloudFactory(unittest.TestCase):
 class TestS3Uploader(unittest.TestCase):
     """Test S3 uploader"""
     
-    @patch('builtins.__import__', side_effect=lambda name, *args, **kw: __import__(name, *args, **kw) if name != 'boto3' else MagicMock())
-    def test_s3_no_bucket_configured(self, mock_import):
+    def test_s3_no_bucket_configured(self):
         """Test S3 without bucket configuration"""
         uploader = S3Uploader()
         
@@ -40,11 +58,10 @@ class TestS3Uploader(unittest.TestCase):
 class TestDropboxUploader(unittest.TestCase):
     """Test Dropbox uploader"""
     
-    @patch('app.cloud.dropbox.dropbox')
-    def test_dropbox_upload_success(self, mock_dropbox_module):
+    def test_dropbox_upload_success(self):
         """Test successful Dropbox upload"""
         mock_dbx = MagicMock()
-        mock_dropbox_module.Dropbox.return_value = mock_dbx
+        mock_dropbox.Dropbox.return_value = mock_dbx
         
         uploader = DropboxUploader(access_token="test_token")
         result = uploader.upload_file(b"test data", "path/file.csv")
